@@ -1,30 +1,679 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AeroMarket</title>
+<!--
+  ╔══════════════════════════════════════════════════════════╗
+  ║  AEROMARKET — Heat Map Boursière                        ║
+  ║  Hébergement GitHub Pages (instructions) :              ║
+  ║                                                         ║
+  ║  1. Crée un repo GitHub (ex: "aeromarket")              ║
+  ║  2. Upload ce fichier renommé "index.html"              ║
+  ║  3. Va dans Settings → Pages                            ║
+  ║  4. Source : Deploy from a branch → main → / (root)    ║
+  ║  5. Ton site sera live sur :                            ║
+  ║     https://TON-USERNAME.github.io/aeromarket/          ║
+  ╚══════════════════════════════════════════════════════════╝
+
+  APIs utilisées (gratuites, sans inscription) :
+  · Stocks  → Finnhub   (données différées ~15 min)
+  · Crypto  → CoinGecko (temps réel, limite 30 req/min)
+  · Logos   → Clearbit
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AeroMarket — Heat Map Boursière</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+/* ── RESET & ROOT ─────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg:#f8f7f4;--surface:#fff;--border:#e8e6e0;--border-strong:#ccc9c0;
+  --text:#1a1917;--text-muted:#7a7670;--text-faint:#b0ada6;
+  --font-sans:'DM Sans',sans-serif;--font-mono:'DM Mono',monospace;
+  --r:6px;--rl:10px;
+}
+
+html{font-size:15px;scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--font-sans);font-weight:400;line-height:1.5;min-height:100vh}
+
+/* ── NAVIGATION ─────────────────────────────────────── */
+nav{
+  position:sticky;top:0;z-index:200;
+  background:rgba(248,247,244,.93);backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--border);padding:0 2.5rem;
+  display:flex;align-items:center;justify-content:space-between;height:56px;
+}
+.nav-logo{font-size:15px;font-weight:500;letter-spacing:-.02em;color:var(--text);text-decoration:none;display:flex;align-items:center;gap:8px}
+.nav-logo-mark{width:22px;height:22px;background:var(--text);border-radius:4px;display:flex;align-items:center;justify-content:center}
+.nav-logo-mark svg{width:12px;height:12px;fill:var(--bg)}
+.nav-links{display:flex;align-items:center;gap:2rem;list-style:none}
+.nav-links a{font-size:13px;color:var(--text-muted);text-decoration:none;letter-spacing:.01em;transition:color .15s}
+.nav-links a:hover{color:var(--text)}
+.nav-right{display:flex;align-items:center;gap:12px}
+.nav-badge{font-family:var(--font-mono);font-size:10px;padding:3px 8px;border:1px solid var(--border-strong);border-radius:20px;color:var(--text-muted);display:flex;align-items:center;gap:5px}
+
+/* ── LIVE DOT ───────────────────────────────────────── */
+.live-dot{width:5px;height:5px;border-radius:50%;background:#3d9e5f;animation:pulse 2s infinite;display:inline-block;flex-shrink:0}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── HERO ───────────────────────────────────────────── */
+.hero{padding:3.5rem 2.5rem 2rem;border-bottom:1px solid var(--border);display:flex;align-items:flex-end;justify-content:space-between;gap:2rem;flex-wrap:wrap}
+.hero-left{max-width:560px}
+.hero-eyebrow{font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-faint);margin-bottom:.75rem}
+.hero-title{font-size:clamp(26px,4vw,42px);font-weight:300;letter-spacing:-.03em;line-height:1.1;color:var(--text);margin-bottom:.75rem}
+.hero-title em{font-style:italic;font-weight:300}
+.hero-sub{font-size:13px;color:var(--text-muted);line-height:1.6;max-width:420px}
+.hero-stats{display:flex;gap:2rem;flex-shrink:0}
+.stat-block{text-align:right}
+.stat-label{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-faint);margin-bottom:4px}
+.stat-value{font-size:22px;font-weight:300;letter-spacing:-.03em;color:var(--text)}
+.stat-value span{font-size:13px;color:var(--text-muted)}
+
+/* ── TOOLBAR ────────────────────────────────────────── */
+.toolbar,.crypto-toolbar{
+  padding:.875rem 2.5rem;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:.75rem;background:var(--surface);
+}
+.toolbar-left{display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap}
+.toolbar-right{display:flex;align-items:center;gap:.75rem}
+
+.legend{display:flex;align-items:center;gap:10px}
+.legend-label{font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);margin-right:4px}
+.legend-scale{display:flex;align-items:center;gap:3px}
+.legend-step{height:8px;width:22px;border-radius:2px}
+.legend-val{font-family:var(--font-mono);font-size:9px;color:var(--text-faint)}
+
+.sort-group,.size-group{display:flex;border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.sort-btn,.size-btn{font-size:11px;font-family:var(--font-sans);padding:5px 12px;background:transparent;border:none;color:var(--text-muted);cursor:pointer;transition:background .12s,color .12s;letter-spacing:.01em}
+.size-btn{padding:5px 10px}
+.sort-btn+.sort-btn,.size-btn+.size-btn{border-left:1px solid var(--border)}
+.sort-btn.active,.size-btn.active{background:var(--text);color:var(--bg)}
+
+.refresh-btn{font-size:11px;font-family:var(--font-sans);padding:5px 12px;border:1px solid var(--border);border-radius:var(--r);background:transparent;color:var(--text-muted);cursor:pointer;display:flex;align-items:center;gap:5px;transition:border-color .12s,color .12s}
+.refresh-btn:hover{border-color:var(--border-strong);color:var(--text)}
+.refresh-icon{font-size:13px}
+.refresh-btn.spinning .refresh-icon{animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── HEATMAP GRID ───────────────────────────────────── */
+.heatmap-container{padding:1.25rem 2.5rem}
+.heatmap{display:grid;gap:4px;grid-template-columns:repeat(auto-fill,minmax(var(--cm,130px),1fr))}
+.heatmap.size-sm{--cm:95px}.heatmap.size-md{--cm:130px}.heatmap.size-lg{--cm:175px}
+
+/* ── STOCK CELL ─────────────────────────────────────── */
+.cell{border-radius:var(--rl);padding:10px 8px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100px;cursor:pointer;position:relative;overflow:hidden;transition:transform .12s,filter .12s}
+.cell:hover{transform:scale(1.025);filter:brightness(1.06)}
+.cell-logo-wrap{width:38px;height:38px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.18);border-radius:8px;margin-bottom:5px;overflow:hidden}
+.cell-logo{width:30px;height:30px;object-fit:contain}
+.cell-logo-fallback{width:30px;height:30px;display:none;align-items:center;justify-content:center;font-size:9px;font-weight:500;color:rgba(255,255,255,.9);text-align:center;line-height:1.2;letter-spacing:.02em}
+.cell-ticker{font-size:12px;font-weight:500;color:rgba(255,255,255,.96);letter-spacing:.01em}
+.cell-name{font-size:8.5px;color:rgba(255,255,255,.6);text-align:center;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+.cell-pct{font-family:var(--font-mono);font-size:15px;font-weight:400;color:#fff;margin-top:4px;letter-spacing:-.02em}
+.cell-price{font-family:var(--font-mono);font-size:9px;color:rgba(255,255,255,.65);margin-top:1px}
+.loading-overlay{position:absolute;inset:0;background:rgba(0,0,0,.22);display:flex;align-items:center;justify-content:center;border-radius:var(--rl)}
+.spinner{width:14px;height:14px;border:1.5px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+
+/* ── STATUS BAR ─────────────────────────────────────── */
+.statusbar,.crypto-statusbar{padding:.55rem 2.5rem;border-top:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem}
+.status-left{display:flex;align-items:center;gap:8px}
+.status-text,.disclaimer{font-family:var(--font-mono);font-size:10px;color:var(--text-faint)}
+
+/* ── SECTION DIVIDER ────────────────────────────────── */
+.section-divider-line{border:none;border-top:1px solid var(--border);margin:0 2.5rem}
+.section-divider{padding:2.5rem 2.5rem .75rem;display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.section-title{font-size:20px;font-weight:300;letter-spacing:-.03em;color:var(--text)}
+.section-title em{font-style:italic}
+.section-sub{font-size:12px;color:var(--text-faint);font-family:var(--font-mono);margin-top:3px}
+.section-badge{font-size:10px;font-family:var(--font-mono);padding:3px 9px;border-radius:20px;border:1px solid #d4a83a55;background:#fdf6e355;color:#b5860d;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.section-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+
+/* ── CRYPTO CELL ────────────────────────────────────── */
+.crypto-cell{border-radius:var(--rl);padding:10px 8px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:108px;cursor:pointer;position:relative;overflow:hidden;transition:transform .12s,filter .12s}
+.crypto-cell:hover{transform:scale(1.025);filter:brightness(1.06)}
+.crypto-rank{position:absolute;top:6px;left:7px;font-family:var(--font-mono);font-size:8px;color:rgba(255,255,255,.4);line-height:1}
+.crypto-icon{width:36px;height:36px;border-radius:50%;margin-bottom:4px;object-fit:contain}
+.crypto-icon-fallback{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.2);display:none;align-items:center;justify-content:center;font-size:14px;margin-bottom:4px}
+.crypto-symbol{font-size:12px;font-weight:500;color:rgba(255,255,255,.96);text-transform:uppercase}
+.crypto-name{font-size:8.5px;color:rgba(255,255,255,.6);text-align:center;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+.crypto-pct{font-family:var(--font-mono);font-size:15px;font-weight:400;color:#fff;margin-top:4px;letter-spacing:-.02em}
+.crypto-price{font-family:var(--font-mono);font-size:9px;color:rgba(255,255,255,.65);margin-top:1px}
+
+/* ── TOOLTIP ────────────────────────────────────────── */
+.tooltip{position:fixed;pointer-events:none;z-index:9999;background:var(--text);color:var(--bg);font-family:var(--font-mono);font-size:11px;line-height:1.55;padding:7px 11px;border-radius:var(--r);opacity:0;transition:opacity .1s;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.18)}
+
+/* ── FOOTER ─────────────────────────────────────────── */
+footer{padding:2rem 2.5rem;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem}
+.footer-left{font-size:12px;color:var(--text-faint);line-height:1.7}
+.footer-links{display:flex;gap:1.5rem}
+.footer-links a{font-size:11px;color:var(--text-faint);text-decoration:none;letter-spacing:.02em;transition:color .12s}
+.footer-links a:hover{color:var(--text-muted)}
+
+/* ── RESPONSIVE ─────────────────────────────────────── */
+@media(max-width:640px){
+  nav,.hero,.toolbar,.crypto-toolbar,.heatmap-container,
+  .statusbar,.crypto-statusbar,.section-divider,footer{padding-left:1rem;padding-right:1rem}
+  .section-divider-line{margin:0 1rem}
+  .hero-stats,.nav-links{display:none}
+}
+</style>
 </head>
 <body>
-    <header>
-        <h1>Welcome to AeroMarket</h1>
-    </header>
-    <main>
-        <section>
-            <h2>Featured Products</h2>
-            <ul>
-                <li>Product 1</li>
-                <li>Product 2</li>
-                <li>Product 3</li>
-            </ul>
-        </section>
-        <section>
-            <h2>About Us</h2>
-            <p>We are a leading market for aero products and services.</p>
-        </section>
-    </main>
-    <footer>
-        <p>&copy; 2026 AeroMarket. All rights reserved.</p>
-    </footer>
+
+<!-- ══ NAVIGATION ════════════════════════════════════════ -->
+<nav>
+  <a href="#" class="nav-logo">
+    <div class="nav-logo-mark">
+      <svg viewBox="0 0 12 12"><path d="M6 1L11 6L6 11L1 6Z"/></svg>
+    </div>
+    AeroMarket
+  </a>
+  <ul class="nav-links">
+    <li><a href="#aero">Aérospatiale</a></li>
+    <li><a href="#crypto">Crypto</a></li>
+    <li><a href="#footer">À propos</a></li>
+  </ul>
+  <div class="nav-right">
+    <div class="nav-badge">
+      <span class="live-dot"></span>
+      <span id="nav-time">—</span>
+    </div>
+  </div>
+</nav>
+
+<!-- ══ HERO ══════════════════════════════════════════════ -->
+<section class="hero" id="aero">
+  <div class="hero-left">
+    <div class="hero-eyebrow">Marchés · Aérospatiale &amp; Défense · Crypto</div>
+    <h1 class="hero-title">Heat Map <em>boursière</em><br>en temps réel</h1>
+    <p class="hero-sub">Visualisation des 50 plus grandes compagnies aérospatiales mondiales et du Top 30 des cryptomonnaies, classées par capitalisation de marché.</p>
+  </div>
+  <div class="hero-stats">
+    <div class="stat-block">
+      <div class="stat-label">Actions</div>
+      <div class="stat-value">50 <span>titres</span></div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-label">Hausse / Baisse</div>
+      <div class="stat-value" id="up-down-stat">— / —</div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-label">Cryptos</div>
+      <div class="stat-value">30 <span>coins</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ STOCKS TOOLBAR ════════════════════════════════════ -->
+<div class="toolbar">
+  <div class="toolbar-left">
+    <div class="legend">
+      <span class="legend-label">Variation</span>
+      <div class="legend-scale">
+        <span class="legend-val">&lt;−3%</span>
+        <div class="legend-step" style="background:#7f1d1d"></div>
+        <div class="legend-step" style="background:#c03030"></div>
+        <div class="legend-step" style="background:#d96060"></div>
+        <div class="legend-step" style="background:#81c784"></div>
+        <div class="legend-step" style="background:#2d7a4f"></div>
+        <div class="legend-step" style="background:#14472e"></div>
+        <span class="legend-val">&gt;+3%</span>
+      </div>
+    </div>
+    <div class="sort-group">
+      <button class="sort-btn active" id="btn-mcap"  onclick="setSort('mcap')">Cap. bours.</button>
+      <button class="sort-btn"        id="btn-pct"   onclick="setSort('pct')">Variation</button>
+      <button class="sort-btn"        id="btn-alpha" onclick="setSort('alpha')">A–Z</button>
+    </div>
+    <div class="sort-group">
+      <button class="sort-btn active" id="filter-all" onclick="setFilter('all')">Tous</button>
+      <button class="sort-btn"        id="filter-US"  onclick="setFilter('US')">🇺🇸 US</button>
+      <button class="sort-btn"        id="filter-EU"  onclick="setFilter('EU')">🇪🇺 EU</button>
+    </div>
+  </div>
+  <div class="toolbar-right">
+    <div class="size-group">
+      <button class="size-btn"        id="sz-sm" onclick="setSize('sm')">S</button>
+      <button class="size-btn active" id="sz-md" onclick="setSize('md')">M</button>
+      <button class="size-btn"        id="sz-lg" onclick="setSize('lg')">L</button>
+    </div>
+    <button class="refresh-btn" id="refresh-btn" onclick="fetchAllQuotes()">
+      <span class="refresh-icon">↻</span> Actualiser
+    </button>
+  </div>
+</div>
+
+<!-- ══ STOCKS HEATMAP ════════════════════════════════════ -->
+<div class="heatmap-container">
+  <div class="heatmap size-md" id="heatmap"></div>
+</div>
+<div class="statusbar">
+  <div class="status-left">
+    <span class="live-dot"></span>
+    <span class="status-text" id="status-text">Chargement des cours…</span>
+  </div>
+  <span class="disclaimer">Cours indicatifs · Données différées ~15 min · Source : Finnhub</span>
+</div>
+
+<!-- ══ CRYPTO SECTION ════════════════════════════════════ -->
+<hr class="section-divider-line" id="crypto">
+<div class="section-divider">
+  <div>
+    <div class="section-title">Top 30 <em>cryptomonnaies</em></div>
+    <div class="section-sub">Par capitalisation · Variation 24 h · CoinGecko</div>
+  </div>
+  <div class="section-actions">
+    <div class="section-badge">
+      <span class="live-dot" style="background:#d4a83a"></span>
+      Données temps réel
+    </div>
+    <button class="refresh-btn" id="crypto-refresh-btn" onclick="fetchCryptoData()">
+      <span class="refresh-icon" id="crypto-refresh-icon">↻</span> Actualiser
+    </button>
+  </div>
+</div>
+<div class="crypto-toolbar">
+  <div class="toolbar-left">
+    <div class="sort-group">
+      <button class="sort-btn active" id="csort-mcap"  onclick="setCryptoSort('mcap')">Cap. marché</button>
+      <button class="sort-btn"        id="csort-pct"   onclick="setCryptoSort('pct')">Variation 24h</button>
+      <button class="sort-btn"        id="csort-alpha" onclick="setCryptoSort('alpha')">A–Z</button>
+    </div>
+  </div>
+  <div class="toolbar-right">
+    <div class="size-group">
+      <button class="size-btn"        id="csz-sm" onclick="setCryptoSize('sm')">S</button>
+      <button class="size-btn active" id="csz-md" onclick="setCryptoSize('md')">M</button>
+      <button class="size-btn"        id="csz-lg" onclick="setCryptoSize('lg')">L</button>
+    </div>
+  </div>
+</div>
+<div class="heatmap-container">
+  <div class="heatmap size-md" id="crypto-heatmap"></div>
+</div>
+<div class="crypto-statusbar">
+  <div class="status-left">
+    <span class="live-dot" style="background:#d4a83a"></span>
+    <span class="status-text" id="crypto-status">Chargement des cryptos…</span>
+  </div>
+  <span class="disclaimer">Temps réel · CoinGecko API · Actualisation toutes les 2 min</span>
+</div>
+
+<!-- ══ FOOTER ════════════════════════════════════════════ -->
+<footer id="footer">
+  <div class="footer-left">
+    &copy; 2025 AeroMarket — Données fournies à titre informatif uniquement.<br>
+    Ce site ne constitue pas un conseil en investissement.
+  </div>
+  <div class="footer-links">
+    <a href="https://finnhub.io"    target="_blank" rel="noopener">Finnhub</a>
+    <a href="https://coingecko.com" target="_blank" rel="noopener">CoinGecko</a>
+    <a href="https://clearbit.com"  target="_blank" rel="noopener">Clearbit</a>
+  </div>
+</footer>
+
+<!-- ══ TOOLTIP ═══════════════════════════════════════════ -->
+<div class="tooltip" id="tooltip"></div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════════════════ -->
+<script>
+'use strict';
+
+/* ─ CONFIG ─────────────────────────────────────────────── */
+const FINNHUB_KEY = 'd0s7b5hr01qhkgm8tqb0d0s7b5hr01qhkgm8tqbg';
+
+/* ─ COMPANIES ───────────────────────────────────────────── */
+const COMPANIES = [
+  {ticker:'PLTR',   name:'Palantir Technologies', mcap:210, region:'US'},
+  {ticker:'GE',     name:'GE Aerospace',           mcap:195, region:'US'},
+  {ticker:'RTX',    name:'RTX Corporation',        mcap:160, region:'US'},
+  {ticker:'AIR.PA', name:'Airbus SE',              mcap:127, region:'EU'},
+  {ticker:'BA',     name:'Boeing',                 mcap:120, region:'US'},
+  {ticker:'LMT',    name:'Lockheed Martin',        mcap:115, region:'US'},
+  {ticker:'RHM.DE', name:'Rheinmetall AG',         mcap:78,  region:'EU'},
+  {ticker:'GD',     name:'General Dynamics',       mcap:77,  region:'US'},
+  {ticker:'SAF.PA', name:'Safran SA',              mcap:70,  region:'EU'},
+  {ticker:'TDG',    name:'TransDigm Group',        mcap:70,  region:'US'},
+  {ticker:'NOC',    name:'Northrop Grumman',       mcap:68,  region:'US'},
+  {ticker:'BA.L',   name:'BAE Systems',            mcap:45,  region:'EU'},
+  {ticker:'RR.L',   name:'Rolls-Royce Holdings',   mcap:40,  region:'EU'},
+  {ticker:'AXON',   name:'Axon Enterprise',        mcap:34,  region:'US'},
+  {ticker:'HO.PA',  name:'Thales SA',              mcap:28,  region:'EU'},
+  {ticker:'HEICO',  name:'HEICO Corp',             mcap:27,  region:'US'},
+  {ticker:'LDOS',   name:'Leidos Holdings',        mcap:22,  region:'US'},
+  {ticker:'TDY',    name:'Teledyne Technologies',  mcap:20,  region:'US'},
+  {ticker:'LDO.MI', name:'Leonardo SpA',           mcap:18,  region:'EU'},
+  {ticker:'TXT',    name:'Textron',                mcap:14,  region:'US'},
+  {ticker:'RKLB',   name:'Rocket Lab USA',         mcap:10,  region:'US'},
+  {ticker:'HII',    name:'Huntington Ingalls',     mcap:10,  region:'US'},
+  {ticker:'BWXT',   name:'BWX Technologies',       mcap:10,  region:'US'},
+  {ticker:'CW',     name:'Curtiss-Wright',         mcap:9,   region:'US'},
+  {ticker:'ESLT',   name:'Elbit Systems',          mcap:9,   region:'US'},
+  {ticker:'PSN',    name:'Parsons Corporation',    mcap:8,   region:'US'},
+  {ticker:'DRS',    name:'Leonardo DRS',           mcap:8,   region:'US'},
+  {ticker:'CACI',   name:'CACI International',     mcap:8,   region:'US'},
+  {ticker:'SAIC',   name:'Science Applications',   mcap:6,   region:'US'},
+  {ticker:'KTOS',   name:'Kratos Defense',         mcap:6,   region:'US'},
+  {ticker:'ERJ',    name:'Embraer',                mcap:5,   region:'US'},
+  {ticker:'CAE',    name:'CAE Inc',                mcap:5,   region:'US'},
+  {ticker:'JOBY',   name:'Joby Aviation',          mcap:5,   region:'US'},
+  {ticker:'AJRD',   name:'Aerojet Rocketdyne',     mcap:5,   region:'US'},
+  {ticker:'ASTS',   name:'AST SpaceMobile',        mcap:4,   region:'US'},
+  {ticker:'AVAV',   name:'AeroVironment',          mcap:4,   region:'US'},
+  {ticker:'MOOG',   name:'Moog Inc',               mcap:4,   region:'US'},
+  {ticker:'HXL',    name:'Hexcel Corp',            mcap:3,   region:'US'},
+  {ticker:'SPR',    name:'Spirit AeroSystems',     mcap:3,   region:'US'},
+  {ticker:'VSAT',   name:'Viasat',                 mcap:2.5, region:'US'},
+  {ticker:'MRCY',   name:'Mercury Systems',        mcap:2,   region:'US'},
+  {ticker:'ACHR',   name:'Archer Aviation',        mcap:1.5, region:'US'},
+  {ticker:'EVEX',   name:'Eve Holding',            mcap:1,   region:'US'},
+  {ticker:'ATRO',   name:'Astronics Corp',         mcap:0.7, region:'US'},
+  {ticker:'RDW',    name:'Redwire Corp',           mcap:0.4, region:'US'},
+  {ticker:'KRNT',   name:'Kornit Digital',         mcap:0.8, region:'US'},
+  {ticker:'SPCE',   name:'Virgin Galactic',        mcap:0.3, region:'US'},
+  {ticker:'LILM',   name:'Lilium NV',              mcap:0.2, region:'US'},
+  {ticker:'MNTS',   name:'Momentus Inc',           mcap:0.1, region:'US'},
+  {ticker:'ASTR',   name:'Astra Space',            mcap:0.1, region:'US'},
+];
+
+const DOMAIN_MAP = {
+  'PLTR':'palantir.com',    'GE':'ge.com',             'RTX':'rtx.com',
+  'BA':'boeing.com',        'LMT':'lockheedmartin.com','GD':'gd.com',
+  'TDG':'transdigm.com',    'NOC':'northropgrumman.com','HEICO':'heico.com',
+  'LDOS':'leidos.com',      'TDY':'teledyne.com',      'AXON':'axon.com',
+  'HII':'hii.com',          'TXT':'textron.com',       'BWXT':'bwxt.com',
+  'CW':'curtisswright.com', 'ESLT':'elbitsystems.com', 'PSN':'parsons.com',
+  'DRS':'leonardodrs.com',  'CACI':'caci.com',         'SAIC':'saic.com',
+  'KTOS':'kratosdefense.com','RKLB':'rocketlabusa.com','ERJ':'embraer.com',
+  'CAE':'cae.com',          'JOBY':'jobyaviation.com', 'AJRD':'aerojetrocketdyne.com',
+  'AVAV':'avinc.com',       'MOOG':'moog.com',         'HXL':'hexcel.com',
+  'SPR':'spiritaero.com',   'MRCY':'mrcy.com',         'ACHR':'archer.com',
+  'ATRO':'astronics.com',   'EVEX':'eveairmobility.com','SPCE':'virgingalactic.com',
+  'VSAT':'viasat.com',      'ASTS':'ast-science.com',  'RDW':'redwirespace.com',
+  'AIR.PA':'airbus.com',    'RHM.DE':'rheinmetall.com','BA.L':'baesystems.com',
+  'RR.L':'rolls-royce.com', 'HO.PA':'thalesgroup.com', 'LDO.MI':'leonardocompany.com',
+  'SAF.PA':'safran.com',
+};
+
+/* ─ CRYPTO ──────────────────────────────────────────────── */
+const CRYPTO_IDS = [
+  'bitcoin','ethereum','tether','binancecoin','solana',
+  'ripple','usd-coin','staked-ether','dogecoin','cardano',
+  'tron','avalanche-2','chainlink','shiba-inu','polkadot',
+  'bitcoin-cash','near','uniswap','litecoin','internet-computer',
+  'dai','fetch-ai','aptos','monero','stellar',
+  'ethereum-classic','okb','hedera-hashgraph','filecoin','immutable-x'
+];
+
+const CRYPTO_EMOJI = {
+  bitcoin:'₿',ethereum:'Ξ',tether:'₮',binancecoin:'B',solana:'◎',
+  ripple:'✕',dogecoin:'Ð',cardano:'₳',polkadot:'●',litecoin:'Ł',
+  monero:'ɱ',stellar:'✦',chainlink:'⬡',
+};
+
+/* ─ STATE ───────────────────────────────────────────────── */
+let quotesData     = {};
+let cryptoData     = [];
+let sortMode       = 'mcap';
+let filterRegion   = 'all';
+let cryptoSortMode = 'mcap';
+
+/* ─ COLORS ──────────────────────────────────────────────── */
+function stockColor(p) {
+  if (p==null)  return '#5a5955';
+  if (p < -3)   return '#7f1d1d';
+  if (p < -2)   return '#991f1f';
+  if (p < -1)   return '#c03030';
+  if (p < -0.1) return '#d96060';
+  if (p < 0.1)  return '#6b6a66';
+  if (p < 1)    return '#4a8c62';
+  if (p < 2)    return '#2d7a4f';
+  if (p < 3)    return '#1f6040';
+  return '#14472e';
+}
+function cryptoColor(p) {
+  if (p==null)  return '#5a5955';
+  if (p < -6)   return '#7f1d1d';
+  if (p < -3)   return '#991f1f';
+  if (p < -1)   return '#c03030';
+  if (p < -0.1) return '#d96060';
+  if (p < 0.1)  return '#6b6a66';
+  if (p < 1)    return '#4a8c62';
+  if (p < 3)    return '#2d7a4f';
+  if (p < 6)    return '#1f6040';
+  return '#14472e';
+}
+
+/* ─ FORMATTERS ──────────────────────────────────────────── */
+const fmtPct = v => v==null ? '—' : (v>=0?'+':'')+v.toFixed(2)+'%';
+const fmtSP  = v => !v ? '' : (v>=1000?'$'+v.toFixed(0):'$'+v.toFixed(2));
+function fmtCP(v) {
+  if (v==null) return '—';
+  if (v>=1000) return '$'+v.toLocaleString('en-US',{maximumFractionDigits:0});
+  if (v>=1)    return '$'+v.toFixed(2);
+  if (v>=0.01) return '$'+v.toFixed(4);
+  return '$'+v.toFixed(6);
+}
+const fmtSMC  = v => v>=100?v.toFixed(0)+'B':v>=1?v.toFixed(1)+'B':(v*1000).toFixed(0)+'M';
+function fmtBMC(v) {
+  if (!v) return '—';
+  if (v>=1e12) return '$'+(v/1e12).toFixed(2)+'T';
+  if (v>=1e9)  return '$'+(v/1e9).toFixed(1)+'B';
+  if (v>=1e6)  return '$'+(v/1e6).toFixed(0)+'M';
+  return '$'+v.toFixed(0);
+}
+const getDomain = t => DOMAIN_MAP[t] || DOMAIN_MAP[t.replace(/\.[A-Z]+$/,'')] || t.replace(/\.[A-Z]+$/,'').toLowerCase()+'.com';
+const dTicker   = t => t.replace(/\.(PA|DE|L|MI|ST)$/,'');
+const now24     = ()=> new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+const mkEl      = (tag,cls,txt)=>{ const d=document.createElement(tag); d.className=cls; if(txt!==undefined)d.textContent=txt; return d; };
+const delay     = ms => new Promise(r=>setTimeout(r,ms));
+
+/* ─ BUILD STOCK CELL ────────────────────────────────────── */
+function buildStockCell(co) {
+  const q   = quotesData[co.ticker];
+  const ld  = q && q._loading;
+  const pct = (q&&!ld) ? q.dp : null;
+  const pr  = (q&&!ld) ? q.c  : null;
+
+  const div = document.createElement('div');
+  div.className='cell'; div.id='cell-'+co.ticker;
+  div.style.background = ld ? '#4a4945' : stockColor(pct);
+  div.addEventListener('mouseenter', e=>tipStock(e,co,q));
+  div.addEventListener('mousemove',  moveTip);
+  div.addEventListener('mouseleave', hideTip);
+
+  const wrap=document.createElement('div'); wrap.className='cell-logo-wrap';
+  const img=document.createElement('img');  img.className='cell-logo';
+  img.src='https://logo.clearbit.com/'+getDomain(co.ticker); img.alt=co.ticker;
+  const fb=mkEl('div','cell-logo-fallback',dTicker(co.ticker).substring(0,4));
+  img.onerror=()=>{img.style.display='none';fb.style.display='flex';};
+  wrap.appendChild(img); wrap.appendChild(fb);
+
+  div.appendChild(wrap);
+  div.appendChild(mkEl('div','cell-ticker', dTicker(co.ticker)));
+  div.appendChild(mkEl('div','cell-name',   co.name));
+  div.appendChild(mkEl('div','cell-pct',    ld?'…':fmtPct(pct)));
+  div.appendChild(mkEl('div','cell-price',  ld?'':fmtSP(pr)));
+
+  if (ld) {
+    const ov=document.createElement('div'); ov.className='loading-overlay';
+    ov.innerHTML='<div class="spinner"></div>'; div.appendChild(ov);
+  }
+  return div;
+}
+
+/* ─ STOCK RENDER ────────────────────────────────────────── */
+function sortedCompanies() {
+  let a=[...COMPANIES];
+  if (filterRegion!=='all') a=a.filter(c=>c.region===filterRegion);
+  if (sortMode==='mcap')  a.sort((x,y)=>y.mcap-x.mcap);
+  else if (sortMode==='pct') a.sort((x,y)=>(quotesData[y.ticker]?.dp??-999)-(quotesData[x.ticker]?.dp??-999));
+  else a.sort((x,y)=>x.ticker.localeCompare(y.ticker));
+  return a;
+}
+function renderHeatmap() {
+  const c=document.getElementById('heatmap'); c.innerHTML='';
+  sortedCompanies().forEach(co=>c.appendChild(buildStockCell(co)));
+}
+function patchCell(ticker) {
+  const old=document.getElementById('cell-'+ticker);
+  const co=COMPANIES.find(c=>c.ticker===ticker);
+  if(old&&co) old.replaceWith(buildStockCell(co));
+}
+function updateStats() {
+  let up=0,dn=0;
+  COMPANIES.forEach(c=>{const q=quotesData[c.ticker]; if(q&&!q._loading&&q.dp!=null){q.dp>=0?up++:dn++;}});
+  document.getElementById('up-down-stat').innerHTML=
+    `<span style="color:#2d7a4f">${up}</span> / <span style="color:#c03030">${dn}</span>`;
+}
+
+/* ─ STOCK FETCH ─────────────────────────────────────────── */
+async function fetchQuote(ticker) {
+  quotesData[ticker]={_loading:true}; patchCell(ticker);
+  try {
+    const r=await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(ticker)}&token=${FINNHUB_KEY}`);
+    const d=await r.json();
+    quotesData[ticker]=(d&&d.c>0)?{c:d.c,dp:d.dp,d:d.d,pc:d.pc}:null;
+  } catch { quotesData[ticker]=null; }
+  patchCell(ticker); updateStats();
+}
+async function fetchAllQuotes() {
+  const btn=document.getElementById('refresh-btn');
+  btn.classList.add('spinning');
+  document.getElementById('status-text').textContent='Mise à jour des cours…';
+  const tickers=COMPANIES.map(c=>c.ticker);
+  for(let i=0;i<tickers.length;i+=6){
+    await Promise.all(tickers.slice(i,i+6).map(fetchQuote));
+    if(i+6<tickers.length) await delay(350);
+  }
+  btn.classList.remove('spinning');
+  const loaded=Object.values(quotesData).filter(v=>v&&!v._loading&&v.c).length;
+  document.getElementById('status-text').textContent=`${loaded} cours chargés — ${now24()}`;
+  if(sortMode==='pct') renderHeatmap();
+}
+
+/* ─ STOCK CONTROLS ──────────────────────────────────────── */
+function setSort(m) {
+  sortMode=m;
+  ['mcap','pct','alpha'].forEach(x=>document.getElementById('btn-'+x).classList.toggle('active',x===m));
+  renderHeatmap();
+}
+function setSize(s) {
+  ['sm','md','lg'].forEach(x=>document.getElementById('sz-'+x).classList.toggle('active',x===s));
+  document.getElementById('heatmap').className='heatmap size-'+s;
+}
+function setFilter(r) {
+  filterRegion=r;
+  ['all','US','EU'].forEach(x=>document.getElementById('filter-'+x).classList.toggle('active',x===r));
+  renderHeatmap();
+}
+
+/* ─ BUILD CRYPTO CELL ───────────────────────────────────── */
+function buildCryptoCell(coin,rank) {
+  const pct=coin.price_change_percentage_24h;
+  const div=document.createElement('div');
+  div.className='crypto-cell'; div.id='crypto-cell-'+coin.id;
+  div.style.background=cryptoColor(pct);
+  div.addEventListener('mouseenter',e=>tipCrypto(e,coin,rank));
+  div.addEventListener('mousemove', moveTip);
+  div.addEventListener('mouseleave',hideTip);
+
+  div.appendChild(mkEl('div','crypto-rank','#'+rank));
+
+  const img=document.createElement('img'); img.className='crypto-icon';
+  img.src=coin.image||''; img.alt=coin.symbol||'';
+  const fb=document.createElement('div'); fb.className='crypto-icon-fallback';
+  fb.textContent=CRYPTO_EMOJI[coin.id]||(coin.symbol||'?').charAt(0).toUpperCase();
+  img.onerror=()=>{img.style.display='none';fb.style.display='flex';};
+  div.appendChild(img); div.appendChild(fb);
+
+  div.appendChild(mkEl('div','crypto-symbol', coin.symbol||''));
+  div.appendChild(mkEl('div','crypto-name',   coin.name||''));
+  div.appendChild(mkEl('div','crypto-pct',    fmtPct(pct)));
+  div.appendChild(mkEl('div','crypto-price',  fmtCP(coin.current_price)));
+  return div;
+}
+
+/* ─ CRYPTO RENDER ───────────────────────────────────────── */
+function sortedCryptos() {
+  const a=[...cryptoData];
+  if(cryptoSortMode==='mcap') a.sort((x,y)=>(y.market_cap||0)-(x.market_cap||0));
+  else if(cryptoSortMode==='pct') a.sort((x,y)=>(y.price_change_percentage_24h||0)-(x.price_change_percentage_24h||0));
+  else a.sort((x,y)=>x.name.localeCompare(y.name));
+  return a;
+}
+function renderCryptoHeatmap() {
+  const c=document.getElementById('crypto-heatmap'); c.innerHTML='';
+  sortedCryptos().forEach((coin,i)=>c.appendChild(buildCryptoCell(coin,i+1)));
+}
+
+/* ─ CRYPTO FETCH ────────────────────────────────────────── */
+async function fetchCryptoData() {
+  const btn=document.getElementById('crypto-refresh-btn');
+  const icon=document.getElementById('crypto-refresh-icon');
+  btn.classList.add('spinning'); icon.style.animation='spin .6s linear infinite';
+  document.getElementById('crypto-status').textContent='Chargement CoinGecko…';
+  try {
+    const url=`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${CRYPTO_IDS.join(',')}&order=market_cap_desc&per_page=30&page=1&price_change_percentage=24h`;
+    const r=await fetch(url);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    cryptoData=await r.json();
+    renderCryptoHeatmap();
+    const up=cryptoData.filter(c=>(c.price_change_percentage_24h||0)>=0).length;
+    document.getElementById('crypto-status').textContent=
+      `${cryptoData.length} cryptos · ↑${up} ↓${cryptoData.length-up} · ${now24()}`;
+  } catch(e) {
+    document.getElementById('crypto-status').textContent='Erreur : '+e.message+' — Réessayez dans 1 min';
+  }
+  btn.classList.remove('spinning'); icon.style.animation='';
+}
+
+/* ─ CRYPTO CONTROLS ─────────────────────────────────────── */
+function setCryptoSort(m) {
+  cryptoSortMode=m;
+  ['mcap','pct','alpha'].forEach(x=>document.getElementById('csort-'+x).classList.toggle('active',x===m));
+  renderCryptoHeatmap();
+}
+function setCryptoSize(s) {
+  ['sm','md','lg'].forEach(x=>document.getElementById('csz-'+x).classList.toggle('active',x===s));
+  document.getElementById('crypto-heatmap').className='heatmap size-'+s;
+}
+
+/* ─ TOOLTIP ─────────────────────────────────────────────── */
+function tipStock(e,co,q) {
+  const pct=(q&&!q._loading)?q.dp:null, pr=(q&&!q._loading)?q.c:null, pc=(q&&!q._loading)?q.pc:null;
+  setTip(`<strong>${co.ticker}</strong> · ${co.name} ${co.region==='EU'?'🇪🇺':'🇺🇸'}<br>Prix : ${fmtSP(pr)||'—'} &nbsp;|&nbsp; Variation : ${fmtPct(pct)}<br>Clôture préc. : ${pc?fmtSP(pc):'—'} &nbsp;|&nbsp; Cap. bours. : ~${fmtSMC(co.mcap)}`);
+  moveTip(e);
+}
+function tipCrypto(e,coin,rank) {
+  const pct=coin.price_change_percentage_24h;
+  setTip(`<strong>${coin.name}</strong> (${(coin.symbol||'').toUpperCase()}) · #${rank}<br>Prix : ${fmtCP(coin.current_price)} &nbsp;|&nbsp; Var. 24h : ${fmtPct(pct)}<br>Volume : ${fmtBMC(coin.total_volume)} &nbsp;|&nbsp; Cap. marché : ${fmtBMC(coin.market_cap)}`);
+  moveTip(e);
+}
+function setTip(html) {
+  const t=document.getElementById('tooltip'); t.innerHTML=html; t.style.opacity='1';
+}
+function moveTip(e) {
+  const t=document.getElementById('tooltip'); t.style.left=(e.clientX+14)+'px'; t.style.top=(e.clientY-48)+'px';
+}
+function hideTip() { document.getElementById('tooltip').style.opacity='0'; }
+
+/* ─ CLOCK ───────────────────────────────────────────────── */
+function tick() { document.getElementById('nav-time').textContent=now24(); }
+
+/* ─ INIT ────────────────────────────────────────────────── */
+renderHeatmap();
+fetchAllQuotes();
+fetchCryptoData();
+tick();
+setInterval(tick,          1000);
+setInterval(fetchAllQuotes,  5*60*1000);
+setInterval(fetchCryptoData, 2*60*1000);
+</script>
 </body>
 </html>
